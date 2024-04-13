@@ -75,21 +75,21 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py transformer single_cell_prediction \
 
 4. Demo
 
-4.1 Training data from snmCAT-seq data consists of following four files.
+4.1 Training data from snmCAT-seq data include following four files:
 
 4.1.1 ./datasets/methylation_data/chr1.json contains 100 CpGs and each CpG have five keys:
-(1) its chromosome, (2) its position, (3) its strand, (4) cells with hypermethylation and (5) cells with hypomethylation
+(1) chromosome, (2) position, (3) strand, (4) cells with hypermethylation, and (5) cells with hypomethylation
 
-4.1.2 ./scMeformer/datasets/feature_data/chr1.npy contains methylation levels of 93 clusters for above 10000 CpGs
+4.1.2 ./scMeformer/datasets/feature_data/chr1.npy contains DNAm levels of 93 clusters for above 100 CpGs
 
-4.1.3 ./scMeformer/datasets/genome/chr1.npy contains one-hot encoded genome sequences covering above 10000 CpGs
+4.1.3 ./scMeformer/datasets/genome/chr1.npy contains one-hot encoded genome sequences covering above 100 CpGs
 
 4.1.4 ./scMeformer/datasets/position/chr1.npy provides the index of each CpG in ./scMeformer/datasets/feature_data/chr1.npy by its position.
 
 
-4.2 CpGs on chromosome 21 and chromosome 22 are validation and test data, respectively. Both of them have four files of the same format with training data.
+4.2 Validation and test data include CpGs on chromosomes 21 and 22, respectively. Both include four files of the same format with training data.
 
-4.2.1 Both validation data and test_data consist of 100 CpGs.
+4.2.1 Both validation and test data consist of 100 CpGs.
 
 4.3 Train DNAm imputation model by this demo data.
 
