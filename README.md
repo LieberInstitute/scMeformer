@@ -77,7 +77,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py transformer single_cell_prediction \
 
 4.1 Training data from snmCAT-seq data include following four files:
 
-4.1.1 ./datasets/methylation_data/chr1.json contains 100 CpGs and each CpG have five keys:
+4.1.1 ./datasets/methylation_data/chr1.json contains 10000 CpGs and each CpG have five keys:
 (1) chromosome, (2) position, (3) strand, (4) cells with hypermethylation, and (5) cells with hypomethylation
 
 4.1.2 ./scMeformer/datasets/feature_data/chr1.npy contains DNAm levels of 93 clusters for above 100 CpGs
@@ -89,7 +89,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py transformer single_cell_prediction \
 
 4.2 Validation and test data include CpGs on chromosomes 21 and 22, respectively. Both include four files of the same format with training data.
 
-4.2.1 Both validation and test data consist of 100 CpGs.
+4.2.1 Both validation and test data consist of 2000 CpGs.
 
 4.3 Train DNAm imputation model by this demo data.
 
