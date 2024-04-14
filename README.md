@@ -11,22 +11,14 @@ This package is supported by Linux. The package has been tested on Rocky Linux 9
 
 # Python Dependencies
 scMeformer mainly depends on the following Python packages.
-PyTorch
-
-apex
-
-numpy
-
-scipy
-
-scikit-learn
-
-pandas
-
-loompy
-
-json
-
+PyTorch <br/>
+apex <br/>
+numpy <br/>
+scipy <br/>
+scikit-learn <br/>
+pandas <br/>
+loompy <br/>
+json <br/>
 h5py
 
 # Usage
