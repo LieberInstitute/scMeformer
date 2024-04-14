@@ -1,12 +1,12 @@
 #
 This repository contains source code of scMeformer for single cell DNAm data imputation.
 
-## Hardware requirements
+# Hardware requirements
 scMeformer package requires only a standard computer with GPUs and enough RAM to support the in-memory operations.
 
 
-## Software requirements
-# OS Requirements
+# Software requirements
+## OS Requirements
 This package is supported by Linux. The package has been tested on Rocky Linux 9.2.
 
 # Python Dependencies
@@ -21,13 +21,13 @@ loompy
 json
 h5py
 
-## Usage
+# Usage
 
-# 1. Clustering
+## 1. Clustering
 
-1.1. Calculate DNAm levels for each 100kb bin and cluster cells based on DNAm levels of 100kb bins.
+### 1.1. Calculate DNAm levels for each 100kb bin and cluster cells based on DNAm levels of 100kb bins.
 
-# Example
+### Example
 ```bash
 Clusters all cells for a brain sample (Br1092)
 
@@ -35,9 +35,9 @@ $python clustering.py Br1092
 
 ```
 
-1.2. Calculate cluster features for each CpG site based on cell clusters produced by step 1.1
+### 1.2. Calculate cluster features for each CpG site based on cell clusters produced by step 1.1
 
-# Example
+### Example
 ```bash
 Construct training data and calculate cluster features for a brain sample (Br1092)
 
@@ -46,11 +46,11 @@ $python run_feature.py Br1092
 ```
 
 
-# 2. Training
+## 2. Training
 
-2.1. Train DNAm prediction model using single cell data. We trained a prediction model for each brain sample. 
+### 2.1. Train DNAm prediction model using single cell data. We trained a prediction model for each brain sample. 
 
-# Example
+### Example
 ```bash
 train the DNAm prediction model for one brain sample (Br1092) using four GPUs
 
@@ -68,10 +68,10 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python3 -m torch.distributed.launch main.py transfo
 ```
 "num_features" and "task_size" in "./config/schizo_control/Br1092/config.json" denote the numbers of clusters and cells in the brain sample (Br1092).
 
-# 3. Prediction
+## 3. Prediction
 
-3.1. Predicts DNAm levels of CpGs from DNA sequence using one GPU.
-# Example
+### 3.1. Predicts DNAm levels of CpGs from DNA sequence using one GPU.
+### Example
 ```bash
 predict DNAm levels of CpGs for all cells in a brain sample (Br1092) using the trained model
 
@@ -90,7 +90,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py transformer single_cell_prediction \
 	--split chr1
 ```
 
-# 4. Demo
+## 4. Demo
 
 4.1 Training data from snmCAT-seq data include following four files:
 
