@@ -1,8 +1,25 @@
 #
 This repository contains source code of scMeformer for single cell DNAm data imputation.
 
-## Install
-Install PyTorch following instructions from https://pytorch.org/ and apex by following https://github.com/NVIDIA/apex.
+##Hardware requirements
+scMeformer package requires only a standard computer with GPUs and enough RAM to support the in-memory operations.
+
+
+## Software requirements
+#OS Requirements
+This package is supported by Linux. The package has been tested on Rocky Linux 9.2.
+
+#Python Dependencies
+scMeformer mainly depends on the following Python packages.
+PyTorch
+apex
+numpy
+scipy
+scikit-learn
+pandas
+loompy
+json
+h5py
 
 ## Usage
 
