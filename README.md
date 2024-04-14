@@ -77,8 +77,8 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py transformer single_cell_prediction \
 
 4.1 Training data from snmCAT-seq data include following four files:
 
-4.1.1 ./datasets/methylation_data/chr1.json contains 10000 CpGs and each CpG have five keys:
-(1) chromosome, (2) position, (3) strand, (4) cells with hypermethylation, and (5) cells with hypomethylation
+4.1.1 ./scMeformer/datasets/methylation_data/chr1.json contains 10000 CpGs and each CpG have five keys: 
+(1) chromosome, (2) position, (3) strand, (4) cells that are methylated at the CpG site, and (5) that are unmethylated at the CpG site
 
 4.1.2 ./scMeformer/datasets/feature_data/chr1.npy contains DNAm levels of 93 clusters for above 10000 CpGs
 
