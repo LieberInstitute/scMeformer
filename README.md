@@ -10,7 +10,7 @@ scMeformer package requires only a standard computer with GPUs and enough RAM to
 This package is supported by Linux. The package has been tested on Rocky Linux 9.2.
 
 # Python Dependencies
-scMeformer mainly depends on the following Python packages.
+scMeformer mainly depends on the following Python packages. <br/>
 PyTorch <br/>
 apex <br/>
 numpy <br/>
