@@ -915,6 +915,50 @@ class ValuePredictionHead(nn.Module):
         return outputs  # (loss), prediction_scores
 
 
+class MethylValuePredictionHead(nn.Module):
+    def __init__(self,
+                 hidden_size: int,
+                 task_size: int,
+                 hidden_act: typing.Union[str, typing.Callable] = 'gelu',
+                 layer_norm_eps: float = 1e-12,
+                 ignore_index: int = -100):
+        super().__init__()
+        self.task_size = task_size
+        self._ignore_index = ignore_index
+        self.classifier = SimpleMLP(hidden_size, 512, self.task_size, 0.1)
+
+    def forward(self, hidden_states, high_ids=None, low_ids=None, weights=None):
+        hidden_states = self.classifier(hidden_states)
+        hidden_states = torch.squeeze(hidden_states, -1)
+        outputs = (hidden_states,)
+
+        if high_ids is not None or low_ids is not None:
+            targets = torch.ones((high_ids.size()[0], self.task_size+1)) * -1
+            targets = targets.cuda()
+            for k in range(0, high_ids.size()[0]):
+                targets[k, high_ids[k]] = 1
+                targets[k, low_ids[k]] = 0
+            targets = targets[:,0:self.task_size].to(hidden_states.dtype)
+            loss_fct = nn.MSELoss(reduce=False)
+            valid_mask = (targets >= 0)
+            valid_targets = targets[valid_mask]
+            valid_logits = hidden_states[valid_mask]
+            positive_weights = (valid_targets == 1) * 1
+            negative_weights = (valid_targets == 0) * 4
+            weights = positive_weights + negative_weights
+            masked_lm_loss = torch.mean(loss_fct(valid_logits, valid_targets) * weights)
+
+            valid_mask = (targets >= 0)
+            targets = targets[valid_mask]
+            logits = hidden_states[valid_mask]
+            metrics = {"Accuracy": accuracy(logits, targets),
+                       "Sensitivity": sensitivity(logits, targets),
+                       "Specificity": specificity(logits, targets)}
+            loss_and_metrics = (masked_lm_loss, metrics)
+            outputs = (loss_and_metrics,) + outputs
+        return outputs
+
+
 class MultiValuePredictionHead(nn.Module):
     def __init__(self,
                  hidden_size: int,

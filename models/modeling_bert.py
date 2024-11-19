@@ -22,6 +22,7 @@ from models.modeling_utils import LayerNorm
 from models.modeling_utils import MLMHead
 from models.modeling_utils import ValuePredictionHead
 from models.modeling_utils import MultiValuePredictionHead
+from models.modeling_utils import MethylValuePredictionHead
 from models.modeling_utils import SequenceValuePredictionHead
 from models.modeling_utils import SimpleMLP
 import numpy as np
@@ -383,7 +384,7 @@ class ProteinBertAbstractModel(ProteinModel):
         if isinstance(module, nn.Linear) and module.bias is not None:
             module.bias.data.zero_()
 
-
+#CNN model for DNA sequence
 class DNA_CNN(nn.Module):
     def __init__(self, num_kernel):
         super(DNA_CNN,self).__init__()
@@ -422,6 +423,43 @@ class DNA_CNN(nn.Module):
  
         sequence = self.pool(sequence)
         sequence = self.batch(sequence)
+        sequence = self.dropout(sequence)
+        return sequence, feature
+
+
+#CNN model for CpG sequence
+class METH_CNN(nn.Module):
+    def __init__(self, num_kernel):
+        super(METH_CNN,self).__init__()
+        self.num_kernel = num_kernel
+        self.conv1 = nn.Conv2d(1, self.num_kernel, (11, 1), stride=(1, 1), padding=(5, 0))
+        self.conv2 = nn.Conv2d(self.num_kernel, self.num_kernel, (11, 1), stride=(1, 1), padding=(5, 0))
+        self.conv3 = nn.Conv2d(self.num_kernel, self.num_kernel, (11, 1), stride=(1, 1), padding=(5, 0))
+        self.batch = nn.BatchNorm2d(self.num_kernel)
+        self.dropout = nn.Dropout(p=0.2)
+        self.pool1 = nn.MaxPool2d((2, 1), stride=(2, 1))
+        self.pool2 = nn.MaxPool2d((2, 1), stride=(2, 1))
+        self.maxpool = nn.MaxPool2d((50, 1), stride=(50, 1))#5 5 12
+
+    def forward(self,sequence):
+        task_size = sequence.size(dim=2)
+        sequence = torch.unsqueeze(sequence, -1)
+        sequence = torch.transpose(sequence, 2, 3)
+        sequence = torch.transpose(sequence, 1, 2)
+        sequence = F.relu(self.conv1(sequence))
+        sequence = self.pool1(sequence)
+        sequence = F.relu(self.conv2(sequence))
+        sequence = self.pool2(sequence)
+        sequence = F.relu(self.conv3(sequence))
+
+        sequence = self.batch(sequence)
+        feature = self.maxpool(sequence)
+        feature = feature.contiguous().view(-1, task_size, self.num_kernel)
+        feature = self.dropout(feature)
+
+        sequence = torch.squeeze(sequence, -1)
+        sequence = torch.transpose(sequence, 1, 2)
+        sequence = torch.transpose(sequence, 2, 3)
         sequence = self.dropout(sequence)
         return sequence, feature
 
@@ -517,61 +555,21 @@ class ProteinBertModel(ProteinBertAbstractModel):
         return outputs  # sequence_output, pooled_output, (hidden_states), (attentions)
 
 
-"""Creates a model containing both DNA module and CpG module for prediction"""
+"""Builds a model that incorporates both the DNA and CpG modules for prediction"""
 @registry.register_task_model('single_cell_prediction', 'transformer')
 class ProteinBertForMaskedLM(ProteinBertAbstractModel):
 
     def __init__(self, config):
         super().__init__(config)
-         
-        self.feature_cnn = nn.Conv1d(config.num_features, config.hidden_size, 1) #13 21 64
+
+        self.feature_cnn = METH_CNN(config.hidden_size)
         self.feature_bert = ProteinBertModel(config)
-        
+
         self.bert = ProteinBertModel(config)
         self.cnn = DNA_CNN(config.hidden_size)
-        
+
         self.mlm = MultiValuePredictionHead(
             config.hidden_size, config.task_size, config.hidden_act, config.layer_norm_eps,
-            ignore_index=-1) 
-        self.init_weights()
-
-    def forward(self,DNA_data,
-                feature_data=None,
-                input_mask=None):
-        
-        feature_data = torch.transpose(feature_data, 1, 2)
-        feature_outputs = self.feature_cnn(feature_data)
-        feature_outputs = torch.transpose(feature_outputs, 1, 2)
-        input_mask = torch.from_numpy(np.ones((feature_outputs.size()[0],feature_outputs.size()[1]))).cuda()
-        outputs = self.feature_bert(feature_outputs, input_mask=input_mask)
-        feature_output, pooled_feature = outputs[:2]
-        
-        DNA_output, DNA_feature = self.cnn(DNA_data)
-        DNA_output = torch.transpose(DNA_output,1,2)
-        input_mask = torch.from_numpy(np.ones((DNA_output.size()[0],DNA_output.size()[1]))).cuda()
-        outputs = self.bert(DNA_output, input_mask=input_mask)
-        sequence_output, pooled_output = outputs[:2]
-        
-        # add hidden states and attention if they are here
-        outputs = self.mlm(pooled_output, feature_output=pooled_feature) + outputs[2:] #feature_output=pooled_feature
-        return outputs
-
-
-"""create and train a model contains both DNA module and CpG module"""
-@registry.register_task_model('single_cell_regression', 'transformer')
-class ProteinBertForMaskedLM(ProteinBertAbstractModel):
-
-    def __init__(self, config):
-        super().__init__(config)
-        
-        self.feature_cnn = nn.Conv1d(config.num_features, config.hidden_size, 1) #13 21 64
-        self.feature_bert = ProteinBertModel(config)
-         
-        self.bert = ProteinBertModel(config)
-        self.cnn = DNA_CNN(config.hidden_size)
-        
-        self.mlm = MultiValuePredictionHead(
-            config.hidden_size, config.task_size, config.hidden_act, config.layer_norm_eps, 
             ignore_index=-1)
 
         self.init_weights()
@@ -582,26 +580,224 @@ class ProteinBertForMaskedLM(ProteinBertAbstractModel):
                 targets=None,
                 high_ids=None,
                 low_ids=None):
-        
-        feature_data = torch.transpose(feature_data, 1, 2)
-        feature_outputs = self.feature_cnn(feature_data)
-        feature_outputs = torch.transpose(feature_outputs, 1, 2)
+
+        sequence_outputs, feature_outputs = self.feature_cnn(feature_data)
+        feature_outputs = torch.mean(sequence_outputs, dim=2)
         input_mask = torch.from_numpy(np.ones((feature_outputs.size()[0],feature_outputs.size()[1]))).cuda()
         outputs = self.feature_bert(feature_outputs, input_mask=input_mask)
         feature_output, pooled_feature = outputs[:2]
-         
+
         DNA_output, DNA_feature = self.cnn(DNA_data)
         DNA_output = torch.transpose(DNA_output,1,2)
         input_mask = torch.from_numpy(np.ones((DNA_output.size()[0],DNA_output.size()[1]))).cuda()
         outputs = self.bert(DNA_output, input_mask=input_mask)
         sequence_output, pooled_output = outputs[:2]
-        
+
         # add hidden states and attention if they are here
-        outputs = self.mlm(pooled_output, feature_output=pooled_feature, high_ids=high_ids, low_ids=low_ids) + outputs[2:] #feature_output=pooled_feature
+        outputs = self.mlm(pooled_output, feature_output=pooled_feature) + outputs[2:]
         return outputs
 
 
-"""create and train a model with only DNA module"""
+"""create and train a model that contains both the DNA module and CpG module"""
+@registry.register_task_model('single_cell_regression', 'transformer')
+class ProteinBertForMaskedLM(ProteinBertAbstractModel):
+
+    def __init__(self, config):
+        super().__init__(config)
+
+        #self.feature_cnn = nn.Conv1d(config.num_features, config.hidden_size, 1) #13 21 64
+        self.feature_cnn = METH_CNN(config.hidden_size)
+        self.feature_bert = ProteinBertModel(config)
+
+        self.bert = ProteinBertModel(config)
+        self.cnn = DNA_CNN(config.hidden_size)
+
+        self.mlm = MultiValuePredictionHead(
+            config.hidden_size, config.task_size, config.hidden_act, config.layer_norm_eps,
+            ignore_index=-1)
+        self.init_weights()
+
+    def forward(self,DNA_data,
+                methyl_data=None,
+                input_mask=None,
+                targets=None,
+                high_ids=None,
+                low_ids=None,
+                weights=None):
+
+        #feature_data = torch.transpose(feature_data, 1, 2)
+        sequence_outputs, feature_outputs = self.feature_cnn(methyl_data)
+        feature_outputs = torch.mean(sequence_outputs, dim=2)
+        #pooled_feature = torch.mean(feature_outputs, dim=1)
+        #feature_outputs = torch.transpose(feature_outputs, 1, 2)
+        input_mask = torch.from_numpy(np.ones((feature_outputs.size()[0], feature_outputs.size()[1]))).cuda()
+        outputs = self.feature_bert(feature_outputs, input_mask=input_mask)
+        feature_output, pooled_feature = outputs[:2]
+
+        DNA_output, DNA_feature = self.cnn(DNA_data)
+        DNA_output = torch.transpose(DNA_output,1,2)
+        input_mask = torch.from_numpy(np.ones((DNA_output.size()[0],DNA_output.size()[1]))).cuda()
+        outputs = self.bert(DNA_output, input_mask=input_mask)
+        sequence_output, pooled_output = outputs[:2]
+
+        # add hidden states and attention if they are here
+        outputs = self.mlm(pooled_output,feature_output=pooled_feature,high_ids=high_ids,low_ids=low_ids) + outputs[2:]
+        return outputs
+
+
+"""creates and trains a model that incorporates both the DNA and CpG modules for mouse embryo"""
+@registry.register_task_model('single_mouse_regression', 'transformer')
+class ProteinBertForMaskedLM(ProteinBertAbstractModel):
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.feature_cnn = METH_CNN(config.hidden_size)
+        self.feature_bert = ProteinBertModel(config)
+
+        self.bert = ProteinBertModel(config)
+        self.cnn = DNA_CNN(config.hidden_size)
+
+        self.mlm = MultiValuePredictionHead(
+            config.hidden_size, config.task_size, config.hidden_act, config.layer_norm_eps,
+            ignore_index=-1)
+        self.init_weights()
+
+    def forward(self,DNA_data,
+                methyl_data=None,
+                input_mask=None,
+                targets=None,
+                high_ids=None,
+                low_ids=None):
+
+        sequence_outputs, feature_outputs = self.feature_cnn(methyl_data)
+        feature_outputs = torch.mean(sequence_outputs, dim=2)
+        input_mask = torch.from_numpy(np.ones((feature_outputs.size()[0], feature_outputs.size()[1]))).cuda()
+        outputs = self.feature_bert(feature_outputs, input_mask=input_mask)
+        feature_output, pooled_feature = outputs[:2]
+
+        DNA_output, DNA_feature = self.cnn(DNA_data)
+        DNA_output = torch.transpose(DNA_output,1,2)
+        input_mask = torch.from_numpy(np.ones((DNA_output.size()[0],DNA_output.size()[1]))).cuda()
+        outputs = self.bert(DNA_output, input_mask=input_mask)
+        sequence_output, pooled_output = outputs[:2]
+
+        # add hidden states and attention if they are here
+        # feature_output=pooled_feature
+        outputs = self.mlm(pooled_output,feature_output=pooled_feature,high_ids=high_ids,low_ids=low_ids) + outputs[2:]
+        return outputs
+
+
+"""Creates a model that incorporates both the DNA and CpG modules for mouse embryo prediction"""
+@registry.register_task_model('single_mouse_prediction', 'transformer')
+class ProteinBertForMaskedLM(ProteinBertAbstractModel):
+
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.feature_cnn = METH_CNN(config.hidden_size)
+        self.feature_bert = ProteinBertModel(config)
+
+        self.bert = ProteinBertModel(config)
+        self.cnn = DNA_CNN(config.hidden_size)
+
+        self.mlm = MultiValuePredictionHead(
+            config.hidden_size, config.task_size, config.hidden_act, config.layer_norm_eps,
+            ignore_index=-1)
+
+        self.init_weights()
+
+    def forward(self,DNA_data,
+                feature_data=None,
+                input_mask=None,
+                targets=None,
+                high_ids=None,
+                low_ids=None):
+
+        sequence_outputs, feature_outputs = self.feature_cnn(feature_data)
+        feature_outputs = torch.mean(sequence_outputs, dim=2)
+        input_mask = torch.from_numpy(np.ones((feature_outputs.size()[0],feature_outputs.size()[1]))).cuda()
+        outputs = self.feature_bert(feature_outputs, input_mask=input_mask)
+        feature_output, pooled_feature = outputs[:2]
+
+        DNA_output, DNA_feature = self.cnn(DNA_data)
+        DNA_output = torch.transpose(DNA_output,1,2)
+        input_mask = torch.from_numpy(np.ones((DNA_output.size()[0],DNA_output.size()[1]))).cuda()
+        outputs = self.bert(DNA_output, input_mask=input_mask)
+        sequence_output, pooled_output = outputs[:2]
+
+        # add hidden states and attention if they are here
+        #feature_output=pooled_feature
+        outputs = self.mlm(pooled_output, feature_output=pooled_feature) + outputs[2:]
+        return outputs
+
+
+"""create and train a model using only the CpG module"""
+@registry.register_task_model('single_methylation_regression', 'transformer')
+class ProteinBertForMaskedLM(ProteinBertAbstractModel):
+
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.feature_cnn = METH_CNN(config.hidden_size)
+        self.feature_bert = ProteinBertModel(config)
+
+        self.mlm = MethylValuePredictionHead(
+            config.hidden_size, config.task_size, config.hidden_act, config.layer_norm_eps,
+            ignore_index=-1)
+        self.init_weights()
+
+    def forward(self,methyl_data=None,
+                input_mask=None,
+                targets=None,
+                high_ids=None,
+                low_ids=None,
+                weights=None):
+
+        sequence_outputs, feature_outputs = self.feature_cnn(methyl_data)
+        feature_outputs = torch.mean(sequence_outputs, dim=2)
+        input_mask = torch.from_numpy(np.ones((feature_outputs.size()[0], feature_outputs.size()[1]))).cuda()
+        outputs = self.feature_bert(feature_outputs, input_mask=input_mask)
+        feature_output, pooled_feature = outputs[:2]
+
+        # add hidden states and attention if they are here
+        outputs = self.mlm(pooled_feature, high_ids=high_ids, low_ids=low_ids) + outputs[2:]
+        return outputs
+
+
+"""create a model using only the CpG module for prediction"""
+@registry.register_task_model('single_methylation_prediction', 'transformer')
+class ProteinBertForMaskedLM(ProteinBertAbstractModel):
+
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.feature_cnn = METH_CNN(config.hidden_size)
+        self.feature_bert = ProteinBertModel(config)
+
+        self.mlm = MethylValuePredictionHead(
+            config.hidden_size, config.task_size, config.hidden_act, config.layer_norm_eps,
+            ignore_index=-1)
+
+        self.init_weights()
+
+    def forward(self,feature_data=None,
+                input_mask=None,
+                targets=None,
+                high_ids=None,
+                low_ids=None):
+
+        sequence_outputs, feature_outputs = self.feature_cnn(feature_data)
+        feature_outputs = torch.mean(sequence_outputs, dim=2)
+        input_mask = torch.from_numpy(np.ones((feature_outputs.size()[0],feature_outputs.size()[1]))).cuda()
+        outputs = self.feature_bert(feature_outputs, input_mask=input_mask)
+        feature_output, pooled_feature = outputs[:2]
+
+        # add hidden states and attention if they are here
+        outputs = self.mlm(pooled_feature) + outputs[2:]
+        return outputs
+
+
+"""create and train a model using only the DNA module"""
 @registry.register_task_model('single_sequence_regression', 'transformer')
 class ProteinBertForMaskedLM(ProteinBertAbstractModel):
 
@@ -634,7 +830,7 @@ class ProteinBertForMaskedLM(ProteinBertAbstractModel):
         return outputs
 
 
-"""create a model with only DNA module for prediction"""
+"""create a model using only the DNA module for prediction"""
 @registry.register_task_model('single_sequence_prediction', 'transformer')
 class ProteinBertForMaskedLM(ProteinBertAbstractModel):
 
@@ -665,7 +861,7 @@ class ProteinBertForMaskedLM(ProteinBertAbstractModel):
         return outputs
 
 
-"""create and train a CNN model with both DNA module and CpG module"""
+"""create and train a CNN model that incorporates both the DNA and CpG modules"""
 @registry.register_task_model('single_cnn_regression', 'transformer')
 class ProteinBertForMaskedLM(ProteinBertAbstractModel):
 
@@ -700,7 +896,7 @@ class ProteinBertForMaskedLM(ProteinBertAbstractModel):
         return outputs
 
 
-"""create a CNN model with both DNA module and CpG module for prediction"""
+"""create a CNN model that incorporates both the DNA and CpG modules for prediction"""
 @registry.register_task_model('single_cnn_prediction', 'transformer')
 class ProteinBertForMaskedLM(ProteinBertAbstractModel):
 
