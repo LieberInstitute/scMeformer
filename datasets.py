@@ -330,7 +330,7 @@ class EmbedDataset(Dataset):
 
 @registry.register_task('single_cell_prediction')
 class MaskedLanguageModelingDataset(Dataset):
-    """Creates the single cell Dataset for prediction by the model with both DNA module and CpG module
+    """Creates a single cell Dataset for model prediction using both DNA module and CpG module
     #Args:
         data_path (Union[str, Path]): Path to tape data root.
         split (str): One chromosome, specifies which chromosome to load.
@@ -344,23 +344,20 @@ class MaskedLanguageModelingDataset(Dataset):
                  tokenizer: Union[str, TAPETokenizer] = 'iupac',
                  in_memory: bool = False):
         super().__init__()
-
-        sample_name = data_path.strip("\n").split("/")[-3]
-        print(sample_name)
-        self.genome_cpg = {}
-        self.genome_feature = {}
+        self.genome_cpg, self.genome_feature = {}, {}
         self.genome = np.load("./datasets/genome.npy",allow_pickle=True).item()
-        for idx in range(1,23):
-            self.genome_cpg['chr'+str(idx)] = np.load("./datasets/position/chr"+str(idx)+".npy",allow_pickle=True).item()
-        self.genome_feature[split] = np.load("./datasets/merge_data/single_eval/feature_data/"+str(split)+".npy",allow_pickle=True)
+        for chrom in split:
+            self.genome_cpg[chrom] = np.load("./datasets/position/"+chrom+".npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_feature[chrom] = np.load(data_path + "/methyl_data/"+str(chrom)+".npy",allow_pickle=True)
 
-        self.methylation_data = []
-        print("reading\t" + str(split))
-        data_path = Path(data_path)
-        data_file = f'{split}.json'
-        methylation_data = dataset_factory(data_path / data_file, in_memory)
-        if len(self.methylation_data) == 0: self.methylation_data = methylation_data
-        else: self.methylation_data = self.methylation_data + methylation_data
+        data_path, self.methylation_data = Path(data_path), []
+        for chrom in split:
+            print("reading\t" + str(chrom))
+            data_file = f'genome_cpg/{chrom}.json'
+            methylation_data = dataset_factory(data_path / data_file, in_memory)
+            if len(self.methylation_data) == 0: self.methylation_data = methylation_data
+            else: self.methylation_data = self.methylation_data + methylation_data
 
     def __len__(self) -> int:
         return len(self.methylation_data)
@@ -374,9 +371,8 @@ class MaskedLanguageModelingDataset(Dataset):
         DNA_data = np.array(DNA_data, dtype = np.long)
 
         idx = self.genome_cpg[chrom][position]
-        begin, end = max(0, idx-100), min(idx+101, len(self.genome_feature[chrom]))
-        feature_data = np.concatenate((self.genome_feature[chrom][begin:idx], self.genome_feature[chrom][idx+1:end]),0)
-        feature_data = np.array(feature_data, dtype=np.float32)
+        begin, end = max(0, idx-100), min(idx+100, len(self.genome_feature[chrom]))
+        feature_data = np.array(self.genome_feature[chrom][begin:end, :], dtype=np.float32)
         return DNA_data, feature_data, position
 
     def collate_fn(self, batch: List[Any]) -> Dict[str, torch.Tensor]:
@@ -387,12 +383,12 @@ class MaskedLanguageModelingDataset(Dataset):
 
         return {'DNA_data': DNA_data,
                 'position': positions,
-                'feature_data': feature_data}  
+                'feature_data': feature_data}
 
 
 @registry.register_task('single_cell_regression')
 class MaskedLanguageModelingDataset(Dataset):
-    """Creates the single cell Dataset to train a model with both DNA module and CpG module
+    """Creates a single cell Dataset for training the model using both DNA module and CpG module
     #Args:
         data_path (Union[str, Path]): Path to tape data root.
         split (str): One chromosome, specifies which  file to load.
@@ -407,26 +403,23 @@ class MaskedLanguageModelingDataset(Dataset):
                  in_memory: bool = False):
         super().__init__()
 
-        self.genome_cpg, self.genome_feature, self.genome = {}, {}, {}
-        self.genome = np.load(data_path + "/genome.npy",allow_pickle=True).item()
+        self.genome_cpg, self.genome_feature, self.genome_methyl = {}, {}, {}
+        self.genome = np.load("./datasets/genome.npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_cpg[chrom] = np.load("./datasets/position/"+chrom+".npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_feature[chrom] = np.load(data_path + "/feature_data/"+str(chrom)+".npy",allow_pickle=True)
+        for chrom in split:
+            self.genome_methyl[chrom] = np.load(data_path + "/methyl_data/"+str(chrom)+".npy",allow_pickle=True)
+
         self.methylation_data = []
-        print("reading\t" + str(chrom))
-        if split == "chr21" or split == "chr22":
-            self.genome[split] = np.load(data_path+"/genome/"+split+".npy", allow_pickle=True).item()
-            self.genome_feature[split] = np.load(data_path + "/feature_data/"+split+".npy",allow_pickle=True)
-            self.genome_cpg[split] = np.load(data_path + "/position/"+split+".npy",allow_pickle=True).item()
-            data_file = f'{split}.json'
+        data_path = Path(data_path)
+        for chrom in split:
+            print("reading\t" + str(chrom))
+            data_file = f'{chrom}.json'
             methylation_data = dataset_factory(data_path / data_file, in_memory)
-            self.methylation_data = methylation_data
-        else:
-            data_path = Path(data_path + "/methylation_data")
-            for chrom in split:
-                self.genome[chrom] = np.load(data_path+"/genome/"+chrom+".npy", allow_pickle=True).item()
-                self.genome_feature[chrom] = np.load(data_path + "/feature_data/"+chrom+".npy",allow_pickle=True)
-                self.genome_cpg[chrom] = np.load(data_path + "/position/"+chrom+".npy",allow_pickle=True).item()
-                data_file = f'{chrom}.json'
-                methylation_data = dataset_factory(data_path / data_file, in_memory)
-                self.methylation_data = methylation_data
+            if len(self.methylation_data) == 0: self.methylation_data = methylation_data
+            else: self.methylation_data = self.methylation_data + methylation_data
 
     def __len__(self) -> int:
         return len(self.methylation_data)
@@ -442,27 +435,154 @@ class MaskedLanguageModelingDataset(Dataset):
         DNA_data = np.array(DNA_data, dtype = np.long)
 
         idx = self.genome_cpg[chrom][position]
-        begin, end = max(0, idx-100), min(idx+101, len(self.genome_feature[chrom]))
-        feature_data = np.concatenate((self.genome_feature[chrom][begin:idx], self.genome_feature[chrom][idx:end]),0)
-        feature_data = np.array(feature_data, dtype=np.float32)
-        return DNA_data, high_ids, low_ids, feature_data
+        begin, end = max(0, idx-100), min(idx+100, len(self.genome_feature[chrom]))
+        feature_data = np.array(self.genome_feature[chrom][idx, :], dtype=np.float32)
+        methyl_data = copy.deepcopy(self.genome_methyl[chrom][begin:end, :])
+        methyl_data[idx-begin] = feature_data
+        return DNA_data, high_ids, low_ids, methyl_data
 
     def collate_fn(self, batch: List[Any]) -> Dict[str, torch.Tensor]:
-        DNA_data, high_ids, low_ids, feature_data = tuple(zip(*batch))
+        DNA_data, high_ids, low_ids, methyl_data = tuple(zip(*batch))
         DNA_data = torch.from_numpy(pad_sequences(DNA_data, constant_value = 0))
-        feature_data = torch.from_numpy(pad_sequences(feature_data, constant_value = 0))
+        methyl_data = torch.from_numpy(pad_sequences(methyl_data, constant_value = 0))
         high_ids = torch.from_numpy(pad_sequences(high_ids, constant_value = -1))
         low_ids = torch.from_numpy(pad_sequences(low_ids, constant_value = -1))
 
         return {'DNA_data': DNA_data,
                 'high_ids': high_ids,
                 'low_ids': low_ids,
-                'feature_data': feature_data} 
+                'methyl_data': methyl_data}
+
+
+@registry.register_task('single_mouse_prediction')
+class MaskedLanguageModelingDataset(Dataset):
+    """Creates a single cell Dataset for mouse embryo prediction using both DNA module and CpG module
+    #Args:
+        data_path (Union[str, Path]): Path to tape data root.
+        split (str): One of ['train', 'valid', 'holdout'], specifies which data file to load.
+        in_memory (bool, optional): Whether to load the full dataset into memory.
+            Default: False.
+    """
+
+    def __init__(self,
+                 data_path: Union[str, Path],
+                 split: str,
+                 tokenizer: Union[str, TAPETokenizer] = 'iupac',
+                 in_memory: bool = False):
+        super().__init__()
+        self.genome_cpg, self.genome_feature = {}, {}
+        self.genome = np.load("./datasets/mm10.npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_cpg[chrom] = np.load("./datasets/position/mouse_position/"+chrom+".npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_feature[chrom] = np.load(data_path + "/methyl_data/"+str(chrom)+".npy",allow_pickle=True)
+
+        data_path, self.methylation_data = Path(data_path), []
+        for chrom in split:
+            print("reading\t" + str(chrom))
+            data_file = f'mouse_cpg/{chrom}.json'
+            methylation_data = dataset_factory(data_path / data_file, in_memory)
+            if len(self.methylation_data) == 0: self.methylation_data = methylation_data
+            else: self.methylation_data = self.methylation_data + methylation_data
+
+    def __len__(self) -> int:
+        return len(self.methylation_data)
+
+    def __getitem__(self, index):
+        item_data =  self.methylation_data[index]
+        position, chrom = item_data["pos"], item_data["chrom"]
+
+        start, stop = max(0, position-1000), min(position+1000+1, len(self.genome[chrom]))
+        DNA_data = self.genome[chrom][start-1:stop-1]
+        DNA_data = np.array(DNA_data, dtype = np.long)
+
+        idx = self.genome_cpg[chrom][position]
+        begin, end = max(0, idx-100), min(idx+100, len(self.genome_feature[chrom]))
+        feature_data = np.array(self.genome_feature[chrom][begin:end, :], dtype=np.float32)
+        return DNA_data, feature_data, position
+
+    def collate_fn(self, batch: List[Any]) -> Dict[str, torch.Tensor]:
+        DNA_data, feature_data, positions = tuple(zip(*batch))
+        DNA_data = torch.from_numpy(pad_sequences(DNA_data, constant_value = 0))
+        feature_data = torch.from_numpy(pad_sequences(feature_data, constant_value = 0))
+        positions = torch.from_numpy(np.array(positions, dtype=np.long))
+
+        return {'DNA_data': DNA_data,
+                'position': positions,
+                'feature_data': feature_data}
+
+
+@registry.register_task('single_mouse_regression')
+class MaskedLanguageModelingDataset(Dataset):
+    """Creates a single cell Dataset for training the model using both DNA module and CpG module for mouse embryo
+    #Args:
+        data_path (Union[str, Path]): Path to tape data root.
+        split (str): One of ['train', 'valid', 'holdout'], specifies which data file to load.
+        in_memory (bool, optional): Whether to load the full dataset into memory.
+            Default: False.
+    """
+
+    def __init__(self,
+                 data_path: Union[str, Path],
+                 split: str,
+                 tokenizer: Union[str, TAPETokenizer] = 'iupac',
+                 in_memory: bool = False):
+        super().__init__()
+
+        self.genome_cpg, self.genome_feature, self.genome_methyl = {}, {}, {}
+        self.genome = np.load("./datasets/mm10.npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_cpg[chrom] = np.load("./datasets/position/mouse_position/"+chrom+".npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_feature[chrom] = np.load(data_path + "/feature_data/"+str(chrom)+".npy",allow_pickle=True)
+        for chrom in split:
+            self.genome_methyl[chrom] = np.load(data_path + "/methyl_data/"+str(chrom)+".npy",allow_pickle=True)
+
+        self.methylation_data = []
+        data_path = Path(data_path)
+        for chrom in split:
+            print("reading\t" + str(chrom))
+            data_file = f'{chrom}.json'
+            methylation_data = dataset_factory(data_path / data_file, in_memory)
+            if len(self.methylation_data) == 0: self.methylation_data = methylation_data
+            else: self.methylation_data = self.methylation_data + methylation_data
+
+    def __len__(self) -> int:
+        return len(self.methylation_data)
+
+    def __getitem__(self, index):
+        item_data =  self.methylation_data[index]
+        position, chrom, strand = item_data["pos"], item_data["chrom"], item_data["strand"]
+        high_methyl, low_methyl = item_data["high_methyl"], item_data["low_methyl"]
+        high_ids, low_ids = np.array(high_methyl,dtype=np.long), np.array(low_methyl,dtype=np.long)
+
+        start, stop = max(0, position-1000), min(position+1000+1, len(self.genome[chrom]))
+        DNA_data = self.genome[chrom][start-1:stop-1]
+        DNA_data = np.array(DNA_data, dtype = np.long)
+
+        idx = self.genome_cpg[chrom][position]
+        begin, end = max(0, idx-100), min(idx+100, len(self.genome_feature[chrom]))
+        feature_data = np.array(self.genome_feature[chrom][idx, :], dtype=np.float32)
+        methyl_data = copy.deepcopy(self.genome_methyl[chrom][begin:end, :])
+        methyl_data[idx-begin] = feature_data
+        return DNA_data, high_ids, low_ids, methyl_data
+
+    def collate_fn(self, batch: List[Any]) -> Dict[str, torch.Tensor]:
+        DNA_data, high_ids, low_ids, methyl_data = tuple(zip(*batch))
+        DNA_data = torch.from_numpy(pad_sequences(DNA_data, constant_value = 0))
+        methyl_data = torch.from_numpy(pad_sequences(methyl_data, constant_value = 0))
+        high_ids = torch.from_numpy(pad_sequences(high_ids, constant_value = -1))
+        low_ids = torch.from_numpy(pad_sequences(low_ids, constant_value = -1))
+
+        return {'DNA_data': DNA_data,
+                'high_ids': high_ids,
+                'low_ids': low_ids,
+                'methyl_data': methyl_data}
 
 
 @registry.register_task('single_sequence_regression')
 class MaskedLanguageModelingDataset(Dataset):
-    """Creates the single cell Dataset to a model with only DNA module
+    """Creates the single cell Dataset for training the model using only DNA module
     #Args:
         data_path (Union[str, Path]): Path to tape data root.
         split (str): list chromosomes, specifies which chromosomes to load.
@@ -514,7 +634,7 @@ class MaskedLanguageModelingDataset(Dataset):
 
 @registry.register_task('single_sequence_prediction')
 class MaskedLanguageModelingDataset(Dataset):
-    """Creates the single cell Dataset for prediction by the model with only DNA module
+    """Creates a single cell Dataset for model prediction using only DNA module
     #Args:
         data_path (Union[str, Path]): Path to tape data root.
         split (str): One chromosome, specifies which chromosome to load.
@@ -557,9 +677,121 @@ class MaskedLanguageModelingDataset(Dataset):
                 'position': positions}
 
 
+@registry.register_task('single_methylation_regression')
+class MaskedLanguageModelingDataset(Dataset):
+    """Creates a single cell Dataset for training the model using only CpG module
+    #Args:
+        data_path (Union[str, Path]): Path to tape data root.
+        split (str): One of ['train', 'valid', 'holdout'], specifies which data file to load.
+        in_memory (bool, optional): Whether to load the full dataset into memory.
+            Default: False.
+    """
+
+    def __init__(self,
+                 data_path: Union[str, Path],
+                 split: str,
+                 tokenizer: Union[str, TAPETokenizer] = 'iupac',
+                 in_memory: bool = False):
+        super().__init__()
+
+        self.genome_cpg, self.genome_feature, self.genome_methyl = {}, {}, {}
+        for chrom in split:
+            self.genome_cpg[chrom] = np.load("./datasets/position/"+chrom+".npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_feature[chrom] = np.load(data_path + "/feature_data/"+str(chrom)+".npy",allow_pickle=True)
+        for chrom in split:
+            self.genome_methyl[chrom] = np.load(data_path + "/methyl_data/"+str(chrom)+".npy",allow_pickle=True)
+
+        self.methylation_data = []
+        data_path = Path(data_path)
+        for chrom in split:
+            print("reading\t" + str(chrom))
+            data_file = f'{chrom}.json'
+            methylation_data = dataset_factory(data_path / data_file, in_memory)
+            if len(self.methylation_data) == 0: self.methylation_data = methylation_data
+            else: self.methylation_data = self.methylation_data + methylation_data
+
+    def __len__(self) -> int:
+        return len(self.methylation_data)
+
+    def __getitem__(self, index):
+        item_data =  self.methylation_data[index]
+        position, chrom, strand = item_data["pos"], item_data["chrom"], item_data["strand"]
+        high_methyl, low_methyl = item_data["high_methyl"], item_data["low_methyl"]
+        high_ids, low_ids = np.array(high_methyl,dtype=np.long), np.array(low_methyl,dtype=np.long)
+
+        idx = self.genome_cpg[chrom][position]
+        begin, end = max(0, idx-100), min(idx+100, len(self.genome_feature[chrom]))
+        feature_data = np.array(self.genome_feature[chrom][idx, :], dtype=np.float32)
+        methyl_data = copy.deepcopy(self.genome_methyl[chrom][begin:end, :])
+        methyl_data[idx-begin] = feature_data
+        return methyl_data, high_ids, low_ids
+
+    def collate_fn(self, batch: List[Any]) -> Dict[str, torch.Tensor]:
+        methyl_data, high_ids, low_ids = tuple(zip(*batch))
+        methyl_data = torch.from_numpy(pad_sequences(methyl_data, constant_value = 0))
+        high_ids = torch.from_numpy(pad_sequences(high_ids, constant_value = -1))
+        low_ids = torch.from_numpy(pad_sequences(low_ids, constant_value = -1))
+
+        return {'methyl_data': methyl_data,
+                'high_ids': high_ids,
+                'low_ids': low_ids}
+
+
+@registry.register_task('single_methylation_prediction')
+class MaskedLanguageModelingDataset(Dataset):
+    """Creates a single cell Dataset for model prediction using only DNA module
+    #Args:
+        data_path (Union[str, Path]): Path to tape data root.
+        split (str): One of ['train', 'valid', 'holdout'], specifies which data file to load.
+        in_memory (bool, optional): Whether to load the full dataset into memory.
+            Default: False.
+    """
+
+    def __init__(self,
+                 data_path: Union[str, Path],
+                 split: str,
+                 tokenizer: Union[str, TAPETokenizer] = 'iupac',
+                 in_memory: bool = False):
+        super().__init__()
+        self.genome_cpg, self.genome_feature = {}, {}
+        for chrom in split:
+            self.genome_cpg[chrom] = np.load("./datasets/position/"+chrom+".npy",allow_pickle=True).item()
+        for chrom in split:
+            self.genome_feature[chrom] = np.load(data_path + "/feature_data/"+str(chrom)+".npy",allow_pickle=True)
+
+        data_path, self.methylation_data = Path(data_path), []
+        for chrom in split:
+            print("reading\t" + str(chrom))
+            data_file = f'genome_cpg/{chrom}.json'
+            methylation_data = dataset_factory(data_path / data_file, in_memory)
+            if len(self.methylation_data) == 0: self.methylation_data = methylation_data
+            else: self.methylation_data = self.methylation_data + methylation_data
+
+    def __len__(self) -> int:
+        return len(self.methylation_data)
+
+    def __getitem__(self, index):
+        item_data =  self.methylation_data[index]
+        position, chrom = item_data["pos"], item_data["chrom"]
+
+        idx = self.genome_cpg[chrom][position]
+        begin, end = max(0, idx-100), min(idx+100, len(self.genome_feature[chrom]))
+        feature_data = np.array(self.genome_feature[chrom][begin:end, :], dtype=np.float32)
+        return feature_data, position
+
+    def collate_fn(self, batch: List[Any]) -> Dict[str, torch.Tensor]:
+        feature_data, positions = tuple(zip(*batch))
+        feature_data = torch.from_numpy(pad_sequences(feature_data, constant_value = 0))
+        positions = torch.from_numpy(np.array(positions, dtype=np.long))
+
+        return {'feature_data': feature_data,
+                'position': positions}
+
+
 @registry.register_task('single_cnn_regression')
 class MaskedLanguageModelingDataset(Dataset):
-    """Creates the single cell Dataset to train a CNN model
+    """Creates a single cell Dataset for training the model using only CNN module
     #Args:
         data_path (Union[str, Path]): Path to tape data root.
         split (str): a list of chromosomes, specifies which chromosomes to load.
@@ -626,7 +858,7 @@ class MaskedLanguageModelingDataset(Dataset):
 
 @registry.register_task('single_cnn_prediction')
 class MaskedLanguageModelingDataset(Dataset):
-    """Creates the single cell Dataset for prediction by the CNN model
+    """Creates a single cell Dataset for model prediction using only CNN module
     #Args:
         data_path (Union[str, Path]): Path to tape data root.
         split (str): One chromosome, specifies which chromosome to load.
