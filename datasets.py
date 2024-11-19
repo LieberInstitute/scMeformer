@@ -413,7 +413,7 @@ class MaskedLanguageModelingDataset(Dataset):
             self.genome_methyl[chrom] = np.load(data_path + "/methyl_data/"+str(chrom)+".npy",allow_pickle=True)
 
         self.methylation_data = []
-        data_path = Path(data_path)
+        data_path = Path(data_path+"/methylation_data")
         for chrom in split:
             print("reading\t" + str(chrom))
             data_file = f'{chrom}.json'
