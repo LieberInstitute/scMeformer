@@ -101,7 +101,7 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py transformer single_cell_prediction \
 (4) cells that are methylated at the CpG site <br/>
 (5) that are unmethylated at the CpG site <br/>
 
-#### 4.1.2 ./scMeformer/datasets/feature_data/chr1.npy contains DNAm levels of 93 clusters for above 10000 CpGs
+#### 4.1.2 ./scMeformer/datasets/feature_data/chr1.npy contains DNAm levels of 89 clusters for above 10000 CpGs
 
 #### 4.1.3 ./scMeformer/datasets/genome/chr1.npy contains one-hot encoded genome sequences covering above 10000 CpGs
 
